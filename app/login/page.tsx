@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useActionState } from "react";
+import { Suspense, useState, useActionState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { User, Mail, Lock, ArrowRight, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react";
@@ -8,7 +8,7 @@ import { loginAction, registerAction } from "@/lib/auth/actions";
 
 type ActionResult = { error?: string; success?: string } | null;
 
-export default function LoginPage() {
+function LoginForm() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [showPassword, setShowPassword] = useState(false);
   const searchParams = useSearchParams();
@@ -244,5 +244,19 @@ export default function LoginPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="auth-page" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh" }}>
+          <p style={{ color: "var(--text-muted)", letterSpacing: "0.1em" }}>Loading…</p>
+        </main>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }
