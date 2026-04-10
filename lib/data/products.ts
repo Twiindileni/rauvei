@@ -1,21 +1,8 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import type { Product } from "@/lib/data/productModel";
 
-export type Product = {
-  id: string;
-  name: string;
-  category: string;
-  collection: "women" | "men" | "accessories" | "limited-edition";
-  price: number;
-  image_url: string;
-  alt_text: string;
-  featured: boolean;
-  active: boolean;
-  sort_order: number;
-};
-
-export function formatPrice(price: number): string {
-  return `N$${Number(price).toFixed(2)}`;
-}
+export type { Product } from "@/lib/data/productModel";
+export { formatPrice } from "@/lib/data/productModel";
 
 // Featured products for the home page "New Arrivals" section
 export async function getFeaturedProducts(): Promise<Product[]> {

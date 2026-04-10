@@ -8,10 +8,10 @@ import {
   toggleProductFeaturedAction,
 } from "@/lib/admin/actions";
 import {
-  Plus, Edit2, Trash2, X, AlertCircle, Eye, EyeOff, Star, StarOff, Upload, Image,
+  Plus, Edit2, Trash2, X, AlertCircle, Eye, EyeOff, Star, StarOff, Upload, Image, Heart,
 } from "lucide-react";
-import type { Product } from "@/lib/data/products";
-import { formatPrice } from "@/lib/data/products";
+import type { Product } from "@/lib/data/productModel";
+import { formatPrice } from "@/lib/data/productModel";
 
 type FormResult = { error?: string; success?: boolean } | null;
 
@@ -279,6 +279,11 @@ export default function ProductsClient({ products }: { products: Product[] }) {
                     {product.category}
                   </p>
                   <p className="admin-product-card__price">{formatPrice(product.price)}</p>
+                  <p className="admin-product-card__likes">
+                    <Heart size={14} style={{ color: "#e11d48" }} aria-hidden />
+                    <span>{product.likes_count ?? 0}</span>
+                    <span className="admin-product-card__likes-label">likes</span>
+                  </p>
                 </div>
 
                 <div className="admin-product-card__actions">

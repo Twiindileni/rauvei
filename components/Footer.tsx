@@ -16,10 +16,14 @@ export default function Footer() {
             <h4>Navigation</h4>
             <ul>
               <li><Link href="/">Home</Link></li>
-              <li><Link href="/#shop">Boutique</Link></li>
-              <li><Link href="/about">Heritage</Link></li>
-            <li><Link href="/contact">Concierge</Link></li>
-              <li><Link href="/blog">Editorial</Link></li>
+              <li><Link href="/#shop">Exclusives</Link></li>
+              <li><Link href="/collections/women">Women</Link></li>
+              <li><Link href="/collections/men">Men</Link></li>
+              <li><Link href="/collections/accessories">Accessories</Link></li>
+              <li><Link href="/collections/limited-edition">Limited Edition</Link></li>
+              <li><Link href="/about">About</Link></li>
+              <li><Link href="/contact">Contact</Link></li>
+              <li><Link href="/blog">Stories</Link></li>
             </ul>
           </div>
           <div className="footer-social">

@@ -462,6 +462,32 @@ img {
   color: #fff;
 }
 
+.product-like-btn--active {
+  color: #e11d48 !important;
+}
+
+.product-like-btn--active:hover {
+  color: #fff !important;
+  background: #e11d48 !important;
+}
+
+.product-like-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.product-like-count__icon {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
 .product-info {
   padding: 24px 0;
   text-align: left;
@@ -539,6 +565,45 @@ img {
   text-transform: uppercase;
   letter-spacing: 0.2em;
   margin-bottom: 12px;
+}
+
+@media (max-width: 900px) {
+  .about-container {
+    grid-template-columns: 1fr;
+    gap: 36px;
+    align-items: stretch;
+  }
+
+  .about-image {
+    max-width: 100%;
+    margin: 0 auto;
+  }
+
+  .about-image::after {
+    display: none;
+  }
+
+  .about-image img {
+    max-height: 420px;
+    object-fit: cover;
+    object-position: center top;
+  }
+
+  .about-content .section-title {
+    font-size: clamp(1.75rem, 6vw, 2.25rem);
+    line-height: 1.2;
+  }
+
+  .about-text {
+    font-size: 1rem;
+    line-height: 1.75;
+    margin-bottom: 28px;
+  }
+
+  .founder-info {
+    padding-left: 20px;
+    margin-top: 8px;
+  }
 }
 
 /* Contact */
@@ -2260,6 +2325,22 @@ img {
   font-size: 1rem;
   color: #c8956c;
   margin: 0;
+}
+
+.admin-product-card__likes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #666;
+}
+
+.admin-product-card__likes-label {
+  font-weight: 500;
+  color: #999;
+  font-size: 0.78rem;
 }
 
 .admin-product-card__actions {

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAdminStats } from "@/lib/admin/data";
-import { Users, ShoppingBag, MessageSquare, FileText, Clock } from "lucide-react";
+import { Users, ShoppingBag, MessageSquare, FileText, Clock, Heart } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -8,11 +8,12 @@ export default async function AdminOverviewPage() {
   const stats = await getAdminStats();
 
   const cards = [
-    { label: "Total Users",     value: stats.users,        icon: Users,        href: "/admin/users",    color: "#6c63ff" },
-    { label: "Total Orders",    value: stats.orders,       icon: ShoppingBag,  href: "/admin/orders",   color: "#c8956c" },
-    { label: "Pending Orders",  value: stats.pendingOrders,icon: Clock,        href: "/admin/orders",   color: "#e07b4f" },
-    { label: "Messages",        value: stats.messages,     icon: MessageSquare,href: "/admin/messages", color: "#3b9e6e" },
-    { label: "Blog Posts",      value: stats.posts,        icon: FileText,     href: "/admin/posts",    color: "#4a90d9" },
+    { label: "Total Users",     value: stats.users,         icon: Users,        href: "/admin/users",     color: "#6c63ff" },
+    { label: "Total Orders",    value: stats.orders,        icon: ShoppingBag,  href: "/admin/orders",    color: "#c8956c" },
+    { label: "Pending Orders",  value: stats.pendingOrders, icon: Clock,        href: "/admin/orders",    color: "#e07b4f" },
+    { label: "Product Likes",   value: stats.productLikes,  icon: Heart,        href: "/admin/likes",     color: "#e11d48" },
+    { label: "Messages",        value: stats.messages,      icon: MessageSquare,href: "/admin/messages",  color: "#3b9e6e" },
+    { label: "Blog Posts",      value: stats.posts,         icon: FileText,     href: "/admin/posts",     color: "#4a90d9" },
   ];
 
   return (

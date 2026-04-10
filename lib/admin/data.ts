@@ -15,12 +15,21 @@ export async function getAdminStats() {
     .select("*", { count: "exact", head: true })
     .eq("status", "pending");
 
+  const { data: likeRows, error: likesErr } = await db.from("products").select("likes_count");
+  const productLikes = likesErr
+    ? 0
+    : (likeRows ?? []).reduce(
+        (s, r: { likes_count: number | null }) => s + (r.likes_count ?? 0),
+        0,
+      );
+
   return {
     users: usersRes.count ?? 0,
     orders: ordersRes.count ?? 0,
     pendingOrders: pendingOrders.count ?? 0,
     messages: messagesRes.count ?? 0,
     posts: postsRes.count ?? 0,
+    productLikes,
   };
 }
 

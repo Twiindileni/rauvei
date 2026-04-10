@@ -10,6 +10,7 @@ import {
   FileText,
   Image,
   Package,
+  Heart,
   LogOut,
   ChevronRight,
 } from "lucide-react";
@@ -18,6 +19,7 @@ import { logoutAction } from "@/lib/auth/actions";
 const navItems = [
   { href: "/admin",          label: "Overview",     icon: LayoutDashboard },
   { href: "/admin/products", label: "Products",     icon: Package },
+  { href: "/admin/likes",    label: "Likes",        icon: Heart },
   { href: "/admin/orders",   label: "Orders",       icon: ShoppingBag },
   { href: "/admin/users",    label: "Users",        icon: Users },
   { href: "/admin/messages", label: "Messages",     icon: MessageSquare },

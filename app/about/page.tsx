@@ -70,7 +70,7 @@ export default function AboutPage() {
       {/* Founder Section */}
       <section className="section-padding">
         <div className="container">
-          <div className="about-container" style={{ alignItems: "center" }}>
+          <div className="about-container">
             <div className="about-image">
               <img src={founder.image} alt={founder.imageAlt} style={{ borderRadius: "0" }} />
             </div>

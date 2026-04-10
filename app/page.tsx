@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getFeaturedProducts } from "@/lib/data/products";
+import { getLikedProductIdsForUser } from "@/lib/data/productLikes";
 import { founder } from "@/lib/data/storefront";
 import { getPageContentMap } from "@/lib/admin/data";
 import StorefrontProducts from "@/components/StorefrontProducts";
@@ -11,6 +12,7 @@ export default async function Home() {
     getFeaturedProducts(),
     getPageContentMap(),
   ]);
+  const likedProductIds = await getLikedProductIdsForUser(products.map((p) => p.id));
 
   // Fall back to original static values if the DB row hasn't been seeded yet
   const heroImage       = content.hero_image_url    || "/hero.png";
@@ -65,7 +67,7 @@ export default async function Home() {
             <h2 className="section-title">New Arrivals</h2>
             <p className="section-subtitle">Curated excellence for the modern wardrobe</p>
           </div>
-          <StorefrontProducts products={products} />
+          <StorefrontProducts products={products} likedProductIds={likedProductIds} />
         </div>
       </section>
 

@@ -1,4 +1,5 @@
 import { getProductsByCollection } from "@/lib/data/products";
+import { getLikedProductIdsForUser } from "@/lib/data/productLikes";
 import { collectionMeta } from "@/lib/data/storefront";
 import StorefrontProducts from "@/components/StorefrontProducts";
 
@@ -18,6 +19,7 @@ export default async function CollectionPage({ params }: { params: Promise<{ slu
   }
 
   const products = await getProductsByCollection(slug);
+  const likedProductIds = await getLikedProductIdsForUser(products.map((p) => p.id));
 
   return (
     <>
@@ -34,7 +36,7 @@ export default async function CollectionPage({ params }: { params: Promise<{ slu
 
       <section className="products-section section-padding">
         <div className="container">
-          <StorefrontProducts products={products} />
+          <StorefrontProducts products={products} likedProductIds={likedProductIds} />
         </div>
       </section>
     </>
