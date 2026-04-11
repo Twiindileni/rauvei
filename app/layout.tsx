@@ -9,11 +9,6 @@ const playfair = Playfair_Display({ subsets: ["latin"], variable: "--font-playfa
 export const metadata: Metadata = {
   title: "RauVei Fashion Boutique | Setting Fashion Trend",
   description: "Premium collections and fashion trends by RauVei Fashion Boutique.",
-  icons: {
-    icon: "/lauvei.png",
-    shortcut: "/lauvei.png",
-    apple: "/lauvei.png",
-  },
 };
 
 export default function RootLayout({
