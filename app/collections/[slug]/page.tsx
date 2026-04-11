@@ -1,6 +1,7 @@
+import { getPageContentMap } from "@/lib/admin/data";
 import { getProductsByCollection } from "@/lib/data/products";
 import { getLikedProductIdsForUser } from "@/lib/data/productLikes";
-import { collectionMeta } from "@/lib/data/storefront";
+import { collectionMeta, pageContentKeyForCollectionHero } from "@/lib/data/storefront";
 import StorefrontProducts from "@/components/StorefrontProducts";
 
 export const dynamic = "force-dynamic";
@@ -18,14 +19,19 @@ export default async function CollectionPage({ params }: { params: Promise<{ slu
     );
   }
 
-  const products = await getProductsByCollection(slug);
+  const [products, content] = await Promise.all([
+    getProductsByCollection(slug),
+    getPageContentMap(),
+  ]);
   const likedProductIds = await getLikedProductIdsForUser(products.map((p) => p.id));
+  const heroKey = pageContentKeyForCollectionHero(slug);
+  const heroImage = content[heroKey]?.trim() || meta.heroImage;
 
   return (
     <>
       <section className="hero" style={{ height: "60vh" }}>
         <div className="hero-bg">
-          <img src={meta.heroImage} alt={meta.title} />
+          <img src={heroImage} alt={meta.title} />
         </div>
         <div className="hero-content">
           <h2 className="hero-subtitle fadeIn" style={{ animationDelay: "0.2s" }}>{meta.subtitle}</h2>

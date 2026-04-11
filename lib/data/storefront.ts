@@ -99,6 +99,11 @@ export const products: Product[] = [
   }
 ];
 
+/** `page_content` key for the hero image on `/collections/[slug]` (slug uses hyphens; key uses underscores). */
+export function pageContentKeyForCollectionHero(slug: string): string {
+  return `collection_hero_${slug.replace(/-/g, "_")}`;
+}
+
 export const collectionMeta = {
   women: {
     title: "Women's Collection",

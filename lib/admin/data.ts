@@ -180,7 +180,8 @@ export async function getPageContent(): Promise<PageContentItem[]> {
   const { data } = await db
     .from("page_content")
     .select("key, label, value, type, section")
-    .order("section");
+    .order("section", { ascending: true })
+    .order("key", { ascending: true });
   return (data as PageContentItem[]) ?? [];
 }
 

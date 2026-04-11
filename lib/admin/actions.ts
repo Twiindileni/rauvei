@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireAdminUser } from "@/lib/auth/admin";
 
 async function assertAdmin() {
@@ -217,25 +216,71 @@ export async function toggleProductFeaturedAction(productId: string, featured: b
 
 // ─── Page Content ─────────────────────────────────────────────────────────────
 
-export async function savePageContentAction(formData: FormData) {
-  await assertAdmin();
-  const supabase = await createSupabaseServerClient();
+const PAGE_CONTENT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 
-  const updates: { key: string; value: string }[] = [];
-  for (const [key, value] of formData.entries()) {
-    if (key.startsWith("content_")) {
-      updates.push({ key: key.replace("content_", ""), value: value as string });
+export async function savePageContentAction(
+  formData: FormData,
+): Promise<{ success?: boolean; error?: string }> {
+  await assertAdmin();
+  const db = createSupabaseAdminClient();
+
+  const { data: metaRows, error: metaErr } = await db.from("page_content").select("key, type");
+  if (metaErr) return { error: metaErr.message };
+
+  const imageKeys = new Set(
+    (metaRows ?? []).filter((r) => r.type === "image_url").map((r) => r.key as string),
+  );
+
+  const values = new Map<string, string>();
+  for (const [k, v] of formData.entries()) {
+    if (k.startsWith("content_") && typeof v === "string") {
+      values.set(k.replace("content_", ""), v);
     }
   }
 
-  for (const { key, value } of updates) {
-    await supabase
+  for (const key of imageKeys) {
+    const raw = formData.get(`upload_${key}`);
+    if (raw instanceof File && raw.size > 0) {
+      if (!raw.type.startsWith("image/")) {
+        return { error: "Please choose a normal image file (photo), not another file type." };
+      }
+      if (raw.size > PAGE_CONTENT_IMAGE_MAX_BYTES) {
+        return { error: "Each photo must be 5 MB or smaller. Try resizing the image and upload again." };
+      }
+      const extRaw = raw.name.split(".").pop() ?? "jpg";
+      const ext = extRaw.replace(/[^a-z0-9]/gi, "").slice(0, 5) || "jpg";
+      const safeKey = key.replace(/[^a-z0-9_-]/gi, "_");
+      const path = `${safeKey}/${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${ext}`;
+      const buf = await raw.arrayBuffer();
+      const { data: uploaded, error: upErr } = await db.storage.from("page-content").upload(path, buf, {
+        contentType: raw.type || "image/jpeg",
+        upsert: false,
+      });
+      if (upErr) {
+        return {
+          error: `Upload failed (${upErr.message}). If this keeps happening, ask your developer to confirm the "page-content" storage bucket exists in Supabase.`,
+        };
+      }
+      const { data: pub } = db.storage.from("page-content").getPublicUrl(uploaded.path);
+      values.set(key, pub.publicUrl);
+    }
+  }
+
+  for (const [key, value] of values) {
+    const { error } = await db
       .from("page_content")
       .update({ value, updated_at: new Date().toISOString() })
       .eq("key", key);
+    if (error) return { error: error.message };
   }
 
   revalidatePath("/");
+  revalidatePath("/about");
+  revalidatePath("/contact");
+  revalidatePath("/collections/women");
+  revalidatePath("/collections/men");
+  revalidatePath("/collections/accessories");
+  revalidatePath("/collections/limited-edition");
   revalidatePath("/admin/pages");
   return { success: true };
 }
