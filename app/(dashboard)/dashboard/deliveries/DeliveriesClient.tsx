@@ -8,21 +8,22 @@ import type { Delivery } from "@/lib/dashboard/types";
 import { formatCurrency } from "@/lib/dashboard/types";
 import { Truck, MapPin, ExternalLink, CheckCircle, AlertCircle } from "lucide-react";
 
+// Labels align with admin order stages: Pending/Confirmed/Processing → Processing; Shipped → Shipped; etc.
 const DELIVERY_STEPS = [
-  { key: "preparing", label: "Preparing" },
-  { key: "dispatched", label: "Dispatched" },
-  { key: "in_transit", label: "In Transit" },
-  { key: "out_for_delivery", label: "Out for Delivery" },
+  { key: "preparing", label: "Processing" },
+  { key: "dispatched", label: "Shipped" },
+  { key: "in_transit", label: "On the way" },
+  { key: "out_for_delivery", label: "Out for delivery" },
   { key: "delivered", label: "Delivered" },
 ];
 
 const STATUS_LABELS: Record<string, string> = {
-  preparing: "Preparing",
-  dispatched: "Dispatched",
-  in_transit: "In Transit",
-  out_for_delivery: "Out for Delivery",
+  preparing: "Processing",
+  dispatched: "Shipped",
+  in_transit: "On the way",
+  out_for_delivery: "Out for delivery",
   delivered: "Delivered",
-  failed: "Delivery Failed",
+  failed: "Delivery failed",
   returned: "Returned",
 };
 

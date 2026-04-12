@@ -12,15 +12,43 @@ async function assertAdmin() {
 
 // ─── Orders ──────────────────────────────────────────────────────────────────
 
+/** Keeps `deliveries.status` in sync with `orders.status` so the customer timeline updates. */
+function deliveryStatusForOrderStatus(orderStatus: string): string | null {
+  switch (orderStatus) {
+    case "pending":
+    case "confirmed":
+    case "processing":
+      return "preparing";
+    case "shipped":
+      return "dispatched";
+    case "delivered":
+      return "delivered";
+    case "cancelled":
+    case "refunded":
+      return "returned";
+    default:
+      return null;
+  }
+}
+
 export async function updateOrderStatusAction(orderId: string, status: string) {
   await assertAdmin();
   const db = createSupabaseAdminClient();
-  const { error } = await db
-    .from("orders")
-    .update({ status })
-    .eq("id", orderId);
+  const { error } = await db.from("orders").update({ status }).eq("id", orderId);
   if (error) return { error: error.message };
+
+  const deliveryStatus = deliveryStatusForOrderStatus(status);
+  if (deliveryStatus) {
+    const payload: Record<string, unknown> = { status: deliveryStatus };
+    if (deliveryStatus === "delivered") {
+      payload.delivered_at = new Date().toISOString();
+    }
+    await db.from("deliveries").update(payload).eq("order_id", orderId);
+  }
+
   revalidatePath("/admin/orders");
+  revalidatePath("/dashboard/deliveries");
+  revalidatePath("/dashboard/orders");
   return { success: true };
 }
 

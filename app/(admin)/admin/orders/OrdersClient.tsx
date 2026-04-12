@@ -24,9 +24,9 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const DELIVERY_STATUS_OPTIONS: [string, string][] = [
-  ["preparing", "Preparing"],
-  ["dispatched", "Dispatched"],
-  ["in_transit", "In transit"],
+  ["preparing", "Processing"],
+  ["dispatched", "Shipped"],
+  ["in_transit", "On the way"],
   ["out_for_delivery", "Out for delivery"],
   ["delivered", "Delivered"],
   ["failed", "Failed"],
