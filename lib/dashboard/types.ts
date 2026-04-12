@@ -56,6 +56,10 @@ export type Delivery = {
   delivered_at: string | null;
   notes: string | null;
   created_at: string;
+  current_latitude: number | null;
+  current_longitude: number | null;
+  location_updated_at: string | null;
+  user_confirmed_at: string | null;
   orders: { total_amount: number; created_at: string } | null;
 };
 

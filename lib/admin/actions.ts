@@ -284,3 +284,246 @@ export async function savePageContentAction(
   revalidatePath("/admin/pages");
   return { success: true };
 }
+
+// ─── Boutique services ───────────────────────────────────────────────────────
+
+const BOUTIQUE_ICON_KEYS = new Set([
+  "star",
+  "ruler",
+  "scissors",
+  "shopping-bag",
+  "gift",
+  "sparkles",
+]);
+
+const SERVICE_REQUEST_STATUSES = new Set(["pending", "contacted", "completed", "cancelled"]);
+
+function normalizeServiceSlug(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+export async function saveBoutiqueServiceAction(formData: FormData) {
+  await assertAdmin();
+  const db = createSupabaseAdminClient();
+
+  const id = (formData.get("id") as string | null)?.trim() || null;
+  const slugRaw = (formData.get("slug") as string)?.trim() ?? "";
+  const title = (formData.get("title") as string)?.trim();
+  const description = (formData.get("description") as string)?.trim() ?? "";
+  const price_label = (formData.get("price_label") as string)?.trim();
+  const duration_label = (formData.get("duration_label") as string)?.trim();
+  const tagRaw = (formData.get("tag") as string)?.trim();
+  const icon_key = (formData.get("icon_key") as string)?.trim() ?? "star";
+  const sort_order = parseInt(formData.get("sort_order") as string, 10);
+  const active = formData.get("active") === "true";
+
+  const slug = normalizeServiceSlug(slugRaw);
+  if (!slug) return { error: "URL slug is required (letters, numbers, and hyphens only)." };
+  if (!title || !price_label || !duration_label) {
+    return { error: "Title, price label, and duration are required." };
+  }
+  if (!BOUTIQUE_ICON_KEYS.has(icon_key)) return { error: "Invalid icon selection." };
+  if (Number.isNaN(sort_order)) return { error: "Sort order must be a number." };
+
+  const tag = tagRaw || null;
+
+  if (id) {
+    const { data: taken } = await db
+      .from("boutique_services")
+      .select("id")
+      .eq("slug", slug)
+      .neq("id", id)
+      .maybeSingle();
+    if (taken) return { error: "Another service already uses that slug." };
+
+    const { error } = await db
+      .from("boutique_services")
+      .update({
+        slug,
+        title,
+        description,
+        price_label,
+        duration_label,
+        tag,
+        icon_key,
+        sort_order,
+        active,
+      })
+      .eq("id", id);
+    if (error) return { error: error.message };
+  } else {
+    const { data: taken } = await db.from("boutique_services").select("id").eq("slug", slug).maybeSingle();
+    if (taken) return { error: "That slug is already in use." };
+
+    const { error } = await db.from("boutique_services").insert({
+      slug,
+      title,
+      description,
+      price_label,
+      duration_label,
+      tag,
+      icon_key,
+      sort_order,
+      active,
+    });
+    if (error) return { error: error.message };
+  }
+
+  revalidatePath("/admin/services");
+  revalidatePath("/dashboard/services");
+  return { success: true };
+}
+
+export async function deleteBoutiqueServiceAction(serviceId: string) {
+  await assertAdmin();
+  const db = createSupabaseAdminClient();
+  const { error } = await db.from("boutique_services").delete().eq("id", serviceId);
+  if (error) return { error: error.message };
+  revalidatePath("/admin/services");
+  revalidatePath("/dashboard/services");
+  return { success: true };
+}
+
+export async function toggleBoutiqueServiceActiveAction(serviceId: string, active: boolean) {
+  await assertAdmin();
+  const db = createSupabaseAdminClient();
+  const { error } = await db.from("boutique_services").update({ active }).eq("id", serviceId);
+  if (error) return { error: error.message };
+  revalidatePath("/admin/services");
+  revalidatePath("/dashboard/services");
+  return { success: true };
+}
+
+export async function updateServiceRequestStatusAction(requestId: string, status: string) {
+  await assertAdmin();
+  if (!SERVICE_REQUEST_STATUSES.has(status)) return { error: "Invalid status." };
+  const db = createSupabaseAdminClient();
+  const { error } = await db.from("service_requests").update({ status }).eq("id", requestId);
+  if (error) return { error: error.message };
+  revalidatePath("/admin/services");
+  return { success: true };
+}
+
+export async function deleteServiceRequestAction(requestId: string) {
+  await assertAdmin();
+  const db = createSupabaseAdminClient();
+  const { error } = await db.from("service_requests").delete().eq("id", requestId);
+  if (error) return { error: error.message };
+  revalidatePath("/admin/services");
+  return { success: true };
+}
+
+// ─── Deliveries (shipment tracking & live location) ─────────────────────────
+
+const DELIVERY_ROW_STATUSES = new Set([
+  "preparing",
+  "dispatched",
+  "in_transit",
+  "out_for_delivery",
+  "delivered",
+  "failed",
+  "returned",
+]);
+
+type DeliveryFormState = { error?: string } | null;
+
+export async function createDeliveryForOrderAction(
+  _prev: DeliveryFormState,
+  formData: FormData,
+): Promise<DeliveryFormState> {
+  await assertAdmin();
+  const orderId = (formData.get("order_id") as string)?.trim();
+  if (!orderId) return { error: "Missing order." };
+
+  const db = createSupabaseAdminClient();
+  const { data: order, error: oErr } = await db
+    .from("orders")
+    .select("user_id, shipping_address")
+    .eq("id", orderId)
+    .single();
+
+  if (oErr || !order?.shipping_address) {
+    return { error: "Could not load this order or its shipping address." };
+  }
+
+  const { error } = await db.from("deliveries").insert({
+    order_id: orderId,
+    user_id: order.user_id,
+    shipping_address: order.shipping_address,
+    status: "preparing",
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      return { error: "This order already has shipment tracking." };
+    }
+    return { error: error.message };
+  }
+
+  revalidatePath("/admin/orders");
+  revalidatePath("/dashboard/deliveries");
+  return null;
+}
+
+export async function saveDeliveryAction(
+  _prev: DeliveryFormState,
+  formData: FormData,
+): Promise<DeliveryFormState> {
+  await assertAdmin();
+  const deliveryId = (formData.get("delivery_id") as string)?.trim();
+  if (!deliveryId) return { error: "Missing delivery." };
+
+  const status = (formData.get("delivery_status") as string)?.trim();
+  if (!DELIVERY_ROW_STATUSES.has(status)) return { error: "Invalid delivery status." };
+
+  const tracking_number = (formData.get("tracking_number") as string)?.trim() || null;
+  const courier = (formData.get("courier") as string)?.trim() || null;
+  const notes = (formData.get("delivery_notes") as string)?.trim() || null;
+  const estRaw = (formData.get("estimated_delivery_date") as string)?.trim();
+  const estimated_delivery_date = estRaw || null;
+
+  const latRaw = (formData.get("current_latitude") as string)?.trim() ?? "";
+  const lngRaw = (formData.get("current_longitude") as string)?.trim() ?? "";
+
+  const payload: Record<string, unknown> = {
+    status,
+    tracking_number,
+    courier,
+    notes,
+    estimated_delivery_date,
+  };
+
+  if (!latRaw && !lngRaw) {
+    payload.current_latitude = null;
+    payload.current_longitude = null;
+    payload.location_updated_at = null;
+  } else {
+    const lat = parseFloat(latRaw);
+    const lng = parseFloat(lngRaw);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) {
+      return { error: "Latitude and longitude must be valid numbers." };
+    }
+    if (lat < -90 || lat > 90) return { error: "Latitude must be between -90 and 90." };
+    if (lng < -180 || lng > 180) return { error: "Longitude must be between -180 and 180." };
+    payload.current_latitude = lat;
+    payload.current_longitude = lng;
+    payload.location_updated_at = new Date().toISOString();
+  }
+
+  if (status === "delivered") {
+    payload.delivered_at = new Date().toISOString();
+  }
+
+  const db = createSupabaseAdminClient();
+  const { error } = await db.from("deliveries").update(payload).eq("id", deliveryId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin/orders");
+  revalidatePath("/dashboard/deliveries");
+  return null;
+}

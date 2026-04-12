@@ -188,12 +188,51 @@ export async function checkoutAction(formData: FormData) {
   const { error: itemsError } = await supabase.from("order_items").insert(orderItems);
   if (itemsError) return { error: itemsError.message };
 
+  const { error: deliveryError } = await supabase.from("deliveries").insert({
+    order_id: order.id,
+    user_id: user.id,
+    shipping_address: shippingAddress,
+    status: "preparing",
+  });
+  if (deliveryError) return { error: deliveryError.message };
+
   // Clear cart
   await supabase.from("cart_items").delete().eq("user_id", user.id);
 
   revalidatePath("/dashboard/cart");
   revalidatePath("/dashboard/orders");
+  revalidatePath("/dashboard/deliveries");
   return { success: "Order placed successfully!", orderId: order.id };
+}
+
+export type ConfirmDeliveryState = { error?: string; success?: string } | null;
+
+export async function confirmDeliveryReceivedAction(
+  _prev: ConfirmDeliveryState,
+  formData: FormData,
+): Promise<ConfirmDeliveryState> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) return { error: "Not authenticated." };
+
+  const deliveryId = (formData.get("delivery_id") as string)?.trim();
+  if (!deliveryId) return { error: "Missing delivery." };
+
+  const { data: ok, error } = await supabase.rpc("confirm_delivery_received", {
+    p_delivery_id: deliveryId,
+  });
+
+  if (error) return { error: error.message };
+  if (!ok) {
+    return { error: "This delivery cannot be confirmed yet, or it was already completed." };
+  }
+
+  revalidatePath("/dashboard/deliveries");
+  return { success: "Thank you — your delivery is marked as received." };
 }
 
 // ─── Service Booking Request ──────────────────────────────────────────────────
@@ -209,19 +248,35 @@ export async function requestServiceAction(formData: FormData) {
 
   const name = (formData.get("name") as string)?.trim();
   const email = (formData.get("email") as string)?.trim();
-  const service = (formData.get("service") as string)?.trim();
   const message = (formData.get("message") as string)?.trim();
 
-  if (!name || !email || !service || !message) {
+  if (!name || !email || !message) {
     return { error: "All fields are required." };
   }
 
-  const { error } = await supabase.from("contact_messages").insert({
-    name,
-    email,
-    message: `[Service Request: ${service}]\n\n${message}`,
+  const serviceId = (formData.get("service_id") as string)?.trim();
+  if (!serviceId) return { error: "Please choose a service." };
+
+  const { data: svc, error: svcErr } = await supabase
+    .from("boutique_services")
+    .select("id, title")
+    .eq("id", serviceId)
+    .eq("active", true)
+    .maybeSingle();
+
+  if (svcErr || !svc) return { error: "That service is not available. Please refresh and try again." };
+
+  const { error } = await supabase.from("service_requests").insert({
+    user_id: user.id,
+    service_id: svc.id,
+    service_title: svc.title,
+    customer_name: name,
+    customer_email: email,
+    message,
   });
 
   if (error) return { error: error.message };
+
+  revalidatePath("/dashboard/services");
   return { success: "Your service request has been sent. We will contact you within 24 hours." };
 }

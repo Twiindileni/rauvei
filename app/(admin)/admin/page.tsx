@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAdminStats } from "@/lib/admin/data";
-import { Users, ShoppingBag, MessageSquare, FileText, Clock, Heart } from "lucide-react";
+import { Users, ShoppingBag, MessageSquare, FileText, Clock, Heart, Scissors } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +13,13 @@ export default async function AdminOverviewPage() {
     { label: "Pending Orders",  value: stats.pendingOrders, icon: Clock,        href: "/admin/orders",    color: "#e07b4f" },
     { label: "Product Likes",   value: stats.productLikes,  icon: Heart,        href: "/admin/likes",     color: "#e11d48" },
     { label: "Messages",        value: stats.messages,      icon: MessageSquare,href: "/admin/messages",  color: "#3b9e6e" },
+    {
+      label: "Service requests",
+      value: stats.serviceRequests,
+      icon: Scissors,
+      href: "/admin/services",
+      color: "#a855f7",
+    },
     { label: "Blog Posts",      value: stats.posts,         icon: FileText,     href: "/admin/posts",     color: "#4a90d9" },
   ];
 
@@ -55,6 +62,10 @@ export default async function AdminOverviewPage() {
           <Link href="/admin/messages" className="admin-quick-card">
             <MessageSquare size={20} />
             <span>Read Messages</span>
+          </Link>
+          <Link href="/admin/services" className="admin-quick-card">
+            <Scissors size={20} />
+            <span>Service requests & catalog</span>
           </Link>
         </div>
       </div>

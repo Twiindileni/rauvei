@@ -1,7 +1,11 @@
 "use client";
 
-import { useTransition, useState } from "react";
-import { updateOrderStatusAction } from "@/lib/admin/actions";
+import { useTransition, useState, useActionState } from "react";
+import {
+  updateOrderStatusAction,
+  createDeliveryForOrderAction,
+  saveDeliveryAction,
+} from "@/lib/admin/actions";
 import { ChevronDown, ChevronUp, Package } from "lucide-react";
 import type { AdminOrder } from "@/lib/admin/data";
 
@@ -18,6 +22,114 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled:  "#ef4444",
   refunded:   "#6b7280",
 };
+
+const DELIVERY_STATUS_OPTIONS: [string, string][] = [
+  ["preparing", "Preparing"],
+  ["dispatched", "Dispatched"],
+  ["in_transit", "In transit"],
+  ["out_for_delivery", "Out for delivery"],
+  ["delivered", "Delivered"],
+  ["failed", "Failed"],
+  ["returned", "Returned"],
+];
+
+function OrderShipmentForm({ order }: { order: AdminOrder }) {
+  const delivery = order.deliveries?.[0];
+  const [createState, createAction, createPending] = useActionState(createDeliveryForOrderAction, null);
+  const [saveState, saveAction, savePending] = useActionState(saveDeliveryAction, null);
+
+  if (!delivery) {
+    return (
+      <div className="admin-shipment-panel">
+        <p className="admin-label">Shipment tracking</p>
+        <p style={{ fontSize: "0.9rem", color: "#666", marginBottom: "12px", lineHeight: 1.5 }}>
+          No tracking record yet. Create one so the customer sees this order under Deliveries and you can share live map
+          coordinates until they confirm receipt.
+        </p>
+        {createState?.error && (
+          <p className="admin-alert admin-alert--error" style={{ marginBottom: "12px" }}>{createState.error}</p>
+        )}
+        <form action={createAction}>
+          <input type="hidden" name="order_id" value={order.id} />
+          <button type="submit" className="admin-btn admin-btn--primary" disabled={createPending}>
+            {createPending ? "Creating…" : "Create shipment tracking"}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="admin-shipment-panel">
+      <p className="admin-label">Shipment tracking</p>
+      <p style={{ fontSize: "0.8rem", color: "#888", marginBottom: "16px", lineHeight: 1.5 }}>
+        Use decimal latitude & longitude (WGS84). Leave both empty to clear the pin. The customer&apos;s map refreshes about
+        every 25 seconds until the delivery is completed or they confirm receipt.
+      </p>
+      {saveState?.error && (
+        <p className="admin-alert admin-alert--error" style={{ marginBottom: "12px" }}>{saveState.error}</p>
+      )}
+      <form action={saveAction} className="admin-shipment-form">
+        <input type="hidden" name="delivery_id" value={delivery.id} />
+        <div className="admin-form-row">
+          <div className="admin-form-group">
+            <label>Delivery status</label>
+            <select name="delivery_status" defaultValue={delivery.status} required>
+              {DELIVERY_STATUS_OPTIONS.map(([v, lab]) => (
+                <option key={v} value={v}>{lab}</option>
+              ))}
+            </select>
+          </div>
+          <div className="admin-form-group">
+            <label>Estimated delivery date</label>
+            <input
+              type="date"
+              name="estimated_delivery_date"
+              defaultValue={delivery.estimated_delivery_date?.slice(0, 10) ?? ""}
+            />
+          </div>
+        </div>
+        <div className="admin-form-row">
+          <div className="admin-form-group">
+            <label>Courier</label>
+            <input type="text" name="courier" defaultValue={delivery.courier ?? ""} placeholder="e.g. City Express" />
+          </div>
+          <div className="admin-form-group">
+            <label>Tracking number</label>
+            <input type="text" name="tracking_number" defaultValue={delivery.tracking_number ?? ""} />
+          </div>
+        </div>
+        <div className="admin-form-row">
+          <div className="admin-form-group">
+            <label>Current latitude</label>
+            <input
+              type="text"
+              name="current_latitude"
+              placeholder="-22.5609"
+              defaultValue={delivery.current_latitude != null ? String(delivery.current_latitude) : ""}
+            />
+          </div>
+          <div className="admin-form-group">
+            <label>Current longitude</label>
+            <input
+              type="text"
+              name="current_longitude"
+              placeholder="17.0658"
+              defaultValue={delivery.current_longitude != null ? String(delivery.current_longitude) : ""}
+            />
+          </div>
+        </div>
+        <div className="admin-form-group">
+          <label>Internal notes</label>
+          <textarea name="delivery_notes" rows={2} defaultValue={delivery.notes ?? ""} />
+        </div>
+        <button type="submit" className="admin-btn admin-btn--primary" disabled={savePending}>
+          {savePending ? "Saving…" : "Save shipment updates"}
+        </button>
+      </form>
+    </div>
+  );
+}
 
 export default function OrdersClient({ orders }: { orders: AdminOrder[] }) {
   const [, startTransition] = useTransition();
@@ -75,7 +187,7 @@ export default function OrdersClient({ orders }: { orders: AdminOrder[] }) {
           </div>
 
           {expanded === order.id && (
-            <div className="admin-order-card__body">
+            <div className="admin-order-card__body" onClick={(e) => e.stopPropagation()}>
               <div className="admin-order-card__info-row">
                 <div>
                   <p className="admin-label">Shipping Address</p>
@@ -114,6 +226,8 @@ export default function OrdersClient({ orders }: { orders: AdminOrder[] }) {
                   ))}
                 </tbody>
               </table>
+
+              <OrderShipmentForm order={order} />
             </div>
           )}
         </div>

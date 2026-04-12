@@ -4,12 +4,15 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function getAdminStats() {
   const db = createSupabaseAdminClient();
-  const [usersRes, ordersRes, messagesRes, postsRes] = await Promise.all([
-    db.from("profiles").select("*", { count: "exact", head: true }),
-    db.from("orders").select("*", { count: "exact", head: true }),
-    db.from("contact_messages").select("*", { count: "exact", head: true }),
-    db.from("blog_posts").select("*", { count: "exact", head: true }),
-  ]);
+  const [usersRes, ordersRes, messagesRes, postsRes, serviceReqRes, pendingServiceReqRes] =
+    await Promise.all([
+      db.from("profiles").select("*", { count: "exact", head: true }),
+      db.from("orders").select("*", { count: "exact", head: true }),
+      db.from("contact_messages").select("*", { count: "exact", head: true }),
+      db.from("blog_posts").select("*", { count: "exact", head: true }),
+      db.from("service_requests").select("*", { count: "exact", head: true }),
+      db.from("service_requests").select("*", { count: "exact", head: true }).eq("status", "pending"),
+    ]);
   const pendingOrders = await db
     .from("orders")
     .select("*", { count: "exact", head: true })
@@ -30,10 +33,27 @@ export async function getAdminStats() {
     messages: messagesRes.count ?? 0,
     posts: postsRes.count ?? 0,
     productLikes,
+    serviceRequests: serviceReqRes.count ?? 0,
+    pendingServiceRequests: pendingServiceReqRes.count ?? 0,
   };
 }
 
 // ─── Orders ──────────────────────────────────────────────────────────────────
+
+export type AdminDeliveryRow = {
+  id: string;
+  order_id: string;
+  status: string;
+  tracking_number: string | null;
+  courier: string | null;
+  shipping_address: string;
+  estimated_delivery_date: string | null;
+  notes: string | null;
+  current_latitude: number | null;
+  current_longitude: number | null;
+  location_updated_at: string | null;
+  delivered_at: string | null;
+};
 
 export type AdminOrder = {
   id: string;
@@ -50,6 +70,7 @@ export type AdminOrder = {
     quantity: number;
     unit_price: number;
   }[];
+  deliveries: AdminDeliveryRow[] | null;
 };
 
 export async function getAllOrders(): Promise<AdminOrder[]> {
@@ -59,7 +80,12 @@ export async function getAllOrders(): Promise<AdminOrder[]> {
     .select(`
       id, status, total_amount, shipping_address, notes, created_at, user_id,
       profiles!inner(full_name, phone),
-      order_items(id, product_name, quantity, unit_price)
+      order_items(id, product_name, quantity, unit_price),
+      deliveries(
+        id, order_id, status, tracking_number, courier, shipping_address,
+        estimated_delivery_date, notes, current_latitude, current_longitude,
+        location_updated_at, delivered_at
+      )
     `)
     .order("created_at", { ascending: false });
 
@@ -76,6 +102,7 @@ export async function getAllOrders(): Promise<AdminOrder[]> {
   return orders.map((o: any) => ({
     ...o,
     user_email: emailMap[o.user_id] ?? null,
+    deliveries: o.deliveries ?? [],
   }));
 }
 
@@ -193,4 +220,29 @@ export async function getPageContentMap(): Promise<Record<string, string>> {
   } catch {
     return {};
   }
+}
+
+// ─── Boutique services & service requests ─────────────────────────────────────
+
+export type AdminServiceRequest = {
+  id: string;
+  user_id: string;
+  service_id: string | null;
+  service_title: string;
+  customer_name: string;
+  customer_email: string;
+  message: string;
+  status: string;
+  created_at: string;
+};
+
+export async function getServiceRequests(): Promise<AdminServiceRequest[]> {
+  const db = createSupabaseAdminClient();
+  const { data } = await db
+    .from("service_requests")
+    .select(
+      "id, user_id, service_id, service_title, customer_name, customer_email, message, status, created_at",
+    )
+    .order("created_at", { ascending: false });
+  return (data as AdminServiceRequest[]) ?? [];
 }

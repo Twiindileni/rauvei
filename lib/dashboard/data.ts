@@ -101,6 +101,7 @@ export async function getDeliveries(): Promise<Delivery[]> {
     .select(`
       id, order_id, tracking_number, courier, status,
       shipping_address, estimated_delivery_date, delivered_at, notes, created_at,
+      current_latitude, current_longitude, location_updated_at, user_confirmed_at,
       orders (total_amount, created_at)
     `)
     .eq("user_id", user.id)
