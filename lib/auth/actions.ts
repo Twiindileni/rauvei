@@ -5,6 +5,21 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+async function resolveSiteOrigin(): Promise<string> {
+  const h = await headers();
+  const forwardedProto = h.get("x-forwarded-proto");
+  const forwardedHost = h.get("x-forwarded-host");
+  const host = h.get("host");
+  const inferredOrigin =
+    forwardedHost && forwardedProto
+      ? `${forwardedProto}://${forwardedHost}`
+      : host
+        ? `${process.env.NODE_ENV === "development" ? "http" : "https"}://${host}`
+        : null;
+
+  return (process.env.NEXT_PUBLIC_SITE_URL || inferredOrigin || "http://localhost:3000").replace(/\/$/, "");
+}
+
 // ─── Login ───────────────────────────────────────────────────────────────────
 
 export async function loginAction(formData: FormData) {
@@ -67,11 +82,13 @@ export async function registerAction(formData: FormData) {
   }
 
   const supabase = await createSupabaseServerClient();
+  const siteOrigin = await resolveSiteOrigin();
   const { error } = await supabase.auth.signUp({
     email,
     password,
     options: {
       data: { full_name: name },
+      emailRedirectTo: `${siteOrigin}/login`,
     },
   });
 
@@ -103,21 +120,7 @@ export async function forgotPasswordAction(formData: FormData) {
     return { error: "Please enter your email address." };
   }
 
-  const h = await headers();
-  const forwardedProto = h.get("x-forwarded-proto");
-  const forwardedHost = h.get("x-forwarded-host");
-  const host = h.get("host");
-  const inferredOrigin =
-    forwardedHost && forwardedProto
-      ? `${forwardedProto}://${forwardedHost}`
-      : host
-        ? `${process.env.NODE_ENV === "development" ? "http" : "https"}://${host}`
-        : null;
-
-  const siteOrigin = (process.env.NEXT_PUBLIC_SITE_URL || inferredOrigin || "http://localhost:3000").replace(
-    /\/$/,
-    "",
-  );
+  const siteOrigin = await resolveSiteOrigin();
 
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
