@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -102,9 +103,25 @@ export async function forgotPasswordAction(formData: FormData) {
     return { error: "Please enter your email address." };
   }
 
+  const h = await headers();
+  const forwardedProto = h.get("x-forwarded-proto");
+  const forwardedHost = h.get("x-forwarded-host");
+  const host = h.get("host");
+  const inferredOrigin =
+    forwardedHost && forwardedProto
+      ? `${forwardedProto}://${forwardedHost}`
+      : host
+        ? `${process.env.NODE_ENV === "development" ? "http" : "https"}://${host}`
+        : null;
+
+  const siteOrigin = (process.env.NEXT_PUBLIC_SITE_URL || inferredOrigin || "http://localhost:3000").replace(
+    /\/$/,
+    "",
+  );
+
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/auth/reset-password`,
+    redirectTo: `${siteOrigin}/auth/reset-password`,
   });
 
   if (error) {
