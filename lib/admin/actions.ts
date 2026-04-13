@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireAdminUser } from "@/lib/auth/admin";
+import { Resend } from "resend";
+import { renderCampaignHtml } from "@/lib/email/campaignTemplates";
 
 async function assertAdmin() {
   const check = await requireAdminUser();
@@ -554,4 +556,235 @@ export async function saveDeliveryAction(
   revalidatePath("/admin/orders");
   revalidatePath("/dashboard/deliveries");
   return null;
+}
+
+// ─── Admin Email Campaigns ────────────────────────────────────────────────────
+
+type Recipient = { email: string; userId: string | null; fullName: string | null };
+type CampaignFormState = { error?: string; success?: string } | null;
+
+function dedupeRecipients(rows: Recipient[]): Recipient[] {
+  const seen = new Set<string>();
+  const unique: Recipient[] = [];
+  for (const row of rows) {
+    const key = row.email.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push({ ...row, email: key });
+  }
+  return unique;
+}
+
+export async function sendAdminEmailCampaignAction(formData: FormData): Promise<CampaignFormState> {
+  const check = await assertAdmin();
+  const db = createSupabaseAdminClient();
+
+  const kindRaw = (formData.get("kind") as string)?.trim();
+  const audienceRaw = (formData.get("audience") as string)?.trim();
+  const subject = (formData.get("subject") as string)?.trim();
+  const previewText = (formData.get("preview_text") as string)?.trim() ?? "";
+  const message = (formData.get("message") as string)?.trim();
+  const couponCode = (formData.get("coupon_code") as string)?.trim() || undefined;
+  const ctaLabel = (formData.get("cta_label") as string)?.trim() || undefined;
+  const ctaUrl = (formData.get("cta_url") as string)?.trim() || undefined;
+  const recipientEmail = (formData.get("recipient_email") as string)?.trim() || "";
+  const orderId = (formData.get("order_id") as string)?.trim() || "";
+
+  const kind = (kindRaw ?? "") as "promotion" | "coupon" | "invoice" | "announcement";
+  const audience = (audienceRaw ?? "") as "all_users" | "single" | "order_user";
+
+  if (!["promotion", "coupon", "invoice", "announcement"].includes(kind)) {
+    return { error: "Invalid email type." };
+  }
+  if (!["all_users", "single", "order_user"].includes(audience)) {
+    return { error: "Invalid audience." };
+  }
+  if (!subject || !message) return { error: "Subject and message are required." };
+  if (audience === "single" && !recipientEmail) return { error: "Recipient email is required for single-send." };
+  if (audience === "order_user" && !orderId) return { error: "Select an order for order user audience." };
+  if (kind === "invoice" && !orderId) return { error: "Invoice email requires an order." };
+
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) {
+    return { error: "Missing RESEND_API_KEY. Add it in environment variables first." };
+  }
+  const fromEmail = process.env.ADMIN_FROM_EMAIL || "RauVei Boutique <sales@rauvei.com>";
+
+  let orderCtx: {
+    id: string;
+    created_at: string;
+    total_amount: number;
+    user_id: string;
+    items: { product_name: string; quantity: number; unit_price: number }[];
+  } | null = null;
+  if (orderId) {
+    const { data: order, error: orderErr } = await db
+      .from("orders")
+      .select("id, created_at, total_amount, user_id")
+      .eq("id", orderId)
+      .maybeSingle();
+    if (orderErr || !order) return { error: "Order not found for selected order ID." };
+    const { data: items } = await db
+      .from("order_items")
+      .select("product_name, quantity, unit_price")
+      .eq("order_id", orderId);
+    orderCtx = {
+      id: order.id,
+      created_at: order.created_at,
+      total_amount: Number(order.total_amount),
+      user_id: order.user_id,
+      items: (items as { product_name: string; quantity: number; unit_price: number }[] | null) ?? [],
+    };
+  }
+
+  const recipients: Recipient[] = [];
+  if (audience === "single") {
+    recipients.push({ email: recipientEmail, userId: null, fullName: null });
+  } else if (audience === "order_user") {
+    if (!orderCtx) return { error: "Order context missing for recipient lookup." };
+    const { data } = await db.auth.admin.getUserById(orderCtx.user_id);
+    const email = data.user?.email ?? "";
+    if (!email) return { error: "No email found for that order user." };
+    const { data: profile } = await db
+      .from("profiles")
+      .select("full_name")
+      .eq("id", orderCtx.user_id)
+      .maybeSingle();
+    recipients.push({ email, userId: orderCtx.user_id, fullName: profile?.full_name ?? null });
+  } else {
+    const { data: profiles } = await db.from("profiles").select("id, full_name");
+    for (const profile of profiles ?? []) {
+      const { data } = await db.auth.admin.getUserById(profile.id as string);
+      const email = data.user?.email ?? "";
+      if (!email) continue;
+      recipients.push({
+        email,
+        userId: profile.id as string,
+        fullName: (profile.full_name as string | null) ?? null,
+      });
+    }
+  }
+
+  const uniqueRecipients = dedupeRecipients(recipients);
+  if (uniqueRecipients.length === 0) return { error: "No recipient emails found for this campaign." };
+
+  const baseHtml = renderCampaignHtml({
+    kind,
+    subject,
+    previewText,
+    message,
+    couponCode,
+    ctaLabel,
+    ctaUrl,
+    orderId: orderCtx?.id,
+    orderTotal: orderCtx?.total_amount,
+    orderDate: orderCtx
+      ? new Date(orderCtx.created_at).toLocaleDateString("en-NA", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })
+      : undefined,
+    orderItems: orderCtx?.items,
+  });
+
+  const { data: campaign, error: campErr } = await db
+    .from("email_campaigns")
+    .insert({
+      kind,
+      audience,
+      subject,
+      preview_text: previewText,
+      body_html: baseHtml,
+      from_email: fromEmail,
+      status: "draft",
+      metadata: {
+        coupon_code: couponCode ?? null,
+        cta_label: ctaLabel ?? null,
+        cta_url: ctaUrl ?? null,
+        order_id: orderCtx?.id ?? null,
+      },
+      created_by: check.userId,
+    })
+    .select("id")
+    .single();
+  if (campErr || !campaign) return { error: campErr?.message ?? "Failed to create campaign record." };
+
+  const resend = new Resend(resendKey);
+  let sentCount = 0;
+  let failedCount = 0;
+  const recipientRows: Array<Record<string, unknown>> = [];
+
+  for (const recipient of uniqueRecipients) {
+    const personalizedHtml = renderCampaignHtml({
+      kind,
+      subject,
+      previewText,
+      message,
+      couponCode,
+      ctaLabel,
+      ctaUrl,
+      recipientName: recipient.fullName,
+      orderId: orderCtx?.id,
+      orderTotal: orderCtx?.total_amount,
+      orderDate: orderCtx
+        ? new Date(orderCtx.created_at).toLocaleDateString("en-NA", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          })
+        : undefined,
+      orderItems: orderCtx?.items,
+    });
+
+    const result = await resend.emails.send({
+      from: fromEmail,
+      to: recipient.email,
+      subject,
+      html: personalizedHtml,
+    });
+
+    if (result.error) {
+      failedCount += 1;
+      recipientRows.push({
+        campaign_id: campaign.id,
+        user_id: recipient.userId,
+        email: recipient.email,
+        full_name: recipient.fullName,
+        status: "failed",
+        error: result.error.message,
+      });
+      continue;
+    }
+
+    sentCount += 1;
+    recipientRows.push({
+      campaign_id: campaign.id,
+      user_id: recipient.userId,
+      email: recipient.email,
+      full_name: recipient.fullName,
+      status: "sent",
+      provider_message_id: result.data?.id ?? null,
+      sent_at: new Date().toISOString(),
+    });
+  }
+
+  if (recipientRows.length > 0) {
+    await db.from("email_campaign_recipients").insert(recipientRows);
+  }
+
+  await db
+    .from("email_campaigns")
+    .update({
+      status: failedCount > 0 && sentCount === 0 ? "failed" : "sent",
+      sent_count: sentCount,
+      failed_count: failedCount,
+      sent_at: new Date().toISOString(),
+    })
+    .eq("id", campaign.id);
+
+  revalidatePath("/admin/emails");
+  return {
+    success: `Campaign sent: ${sentCount} delivered, ${failedCount} failed.`,
+  };
 }

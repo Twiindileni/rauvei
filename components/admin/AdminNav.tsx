@@ -14,6 +14,7 @@ import {
   LogOut,
   ChevronRight,
   Scissors,
+  Mail,
 } from "lucide-react";
 import { logoutAction } from "@/lib/auth/actions";
 
@@ -23,6 +24,7 @@ const navItems = [
   { href: "/admin/likes",    label: "Likes",        icon: Heart },
   { href: "/admin/orders",   label: "Orders",       icon: ShoppingBag },
   { href: "/admin/services", label: "Services",     icon: Scissors },
+  { href: "/admin/emails",   label: "Emails",       icon: Mail },
   { href: "/admin/users",    label: "Users",        icon: Users },
   { href: "/admin/messages", label: "Messages",     icon: MessageSquare },
   { href: "/admin/posts",    label: "Blog Posts",   icon: FileText },

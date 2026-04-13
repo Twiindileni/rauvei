@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function getAdminStats() {
   const db = createSupabaseAdminClient();
-  const [usersRes, ordersRes, messagesRes, postsRes, serviceReqRes, pendingServiceReqRes] =
+  const [usersRes, ordersRes, messagesRes, postsRes, serviceReqRes, pendingServiceReqRes, emailCampaignRes] =
     await Promise.all([
       db.from("profiles").select("*", { count: "exact", head: true }),
       db.from("orders").select("*", { count: "exact", head: true }),
@@ -12,6 +12,7 @@ export async function getAdminStats() {
       db.from("blog_posts").select("*", { count: "exact", head: true }),
       db.from("service_requests").select("*", { count: "exact", head: true }),
       db.from("service_requests").select("*", { count: "exact", head: true }).eq("status", "pending"),
+      db.from("email_campaigns").select("*", { count: "exact", head: true }),
     ]);
   const pendingOrders = await db
     .from("orders")
@@ -35,6 +36,7 @@ export async function getAdminStats() {
     productLikes,
     serviceRequests: serviceReqRes.count ?? 0,
     pendingServiceRequests: pendingServiceReqRes.count ?? 0,
+    emailCampaigns: emailCampaignRes.count ?? 0,
   };
 }
 
@@ -245,4 +247,28 @@ export async function getServiceRequests(): Promise<AdminServiceRequest[]> {
     )
     .order("created_at", { ascending: false });
   return (data as AdminServiceRequest[]) ?? [];
+}
+
+export type AdminEmailCampaign = {
+  id: string;
+  kind: "promotion" | "coupon" | "invoice" | "announcement";
+  audience: "all_users" | "single" | "order_user";
+  subject: string;
+  preview_text: string;
+  status: "draft" | "sent" | "failed";
+  sent_count: number;
+  failed_count: number;
+  created_by: string | null;
+  created_at: string;
+  sent_at: string | null;
+};
+
+export async function getAdminEmailCampaigns(limit = 20): Promise<AdminEmailCampaign[]> {
+  const db = createSupabaseAdminClient();
+  const { data } = await db
+    .from("email_campaigns")
+    .select("id, kind, audience, subject, preview_text, status, sent_count, failed_count, created_by, created_at, sent_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  return (data as AdminEmailCampaign[]) ?? [];
 }

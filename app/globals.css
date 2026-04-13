@@ -2015,6 +2015,18 @@ img {
   margin-bottom: 14px;
 }
 
+.admin-email-form .admin-form-row {
+  margin-bottom: 0;
+}
+
+.admin-email-form .admin-form-group {
+  margin-bottom: 14px;
+}
+
+.admin-email-form textarea {
+  min-height: 120px;
+}
+
 /* ── Message Cards ────────────────────────────────────────────────────────── */
 .admin-message-card {
   border-bottom: 1px solid #f0e8de;
