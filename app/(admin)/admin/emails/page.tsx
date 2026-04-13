@@ -1,5 +1,5 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getAdminEmailCampaigns, getAllOrders } from "@/lib/admin/data";
+import { getAdminCoupons, getAdminEmailCampaigns, getAllOrders } from "@/lib/admin/data";
 import EmailsClient from "./EmailsClient";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,11 @@ export default async function AdminEmailsPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const [campaigns, orders] = await Promise.all([getAdminEmailCampaigns(25), getAllOrders()]);
+  const [campaigns, orders, coupons] = await Promise.all([
+    getAdminEmailCampaigns(25),
+    getAllOrders(),
+    getAdminCoupons(),
+  ]);
 
   return (
     <div className="admin-page">
@@ -20,7 +24,12 @@ export default async function AdminEmailsPage() {
           Send polished promotions, coupons, and invoices from admin.
         </p>
       </div>
-      <EmailsClient campaigns={campaigns} orders={orders} currentUserId={user?.id ?? ""} />
+      <EmailsClient
+        campaigns={campaigns}
+        orders={orders}
+        coupons={coupons}
+        currentUserId={user?.id ?? ""}
+      />
     </div>
   );
 }

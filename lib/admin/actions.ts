@@ -45,7 +45,34 @@ export async function updateOrderStatusAction(orderId: string, status: string) {
     if (deliveryStatus === "delivered") {
       payload.delivered_at = new Date().toISOString();
     }
-    await db.from("deliveries").update(payload).eq("order_id", orderId);
+    const { data: updatedRows, error: updateDeliveryErr } = await db
+      .from("deliveries")
+      .update(payload)
+      .eq("order_id", orderId)
+      .select("id");
+    if (updateDeliveryErr) return { error: updateDeliveryErr.message };
+
+    // Some historical orders may not have a delivery row yet.
+    // Create one so user dashboard always reflects admin status changes.
+    if (!updatedRows || updatedRows.length === 0) {
+      const { data: orderRow, error: orderErr } = await db
+        .from("orders")
+        .select("user_id, shipping_address")
+        .eq("id", orderId)
+        .maybeSingle();
+      if (orderErr || !orderRow?.user_id || !orderRow?.shipping_address) {
+        return { error: "Order updated, but shipment record could not be created." };
+      }
+
+      const { error: insertDeliveryErr } = await db.from("deliveries").insert({
+        order_id: orderId,
+        user_id: orderRow.user_id,
+        shipping_address: orderRow.shipping_address,
+        status: deliveryStatus,
+        delivered_at: deliveryStatus === "delivered" ? new Date().toISOString() : null,
+      });
+      if (insertDeliveryErr) return { error: insertDeliveryErr.message };
+    }
   }
 
   revalidatePath("/admin/orders");
@@ -563,6 +590,16 @@ export async function saveDeliveryAction(
 type Recipient = { email: string; userId: string | null; fullName: string | null };
 type CampaignFormState = { error?: string; success?: string } | null;
 
+function randomCouponCode(): string {
+  return `RAUVEI-${Math.random().toString(36).slice(2, 6).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+}
+
+function makeInvoiceNumber(): string {
+  const stamp = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+  const seq = Math.floor(Math.random() * 9000 + 1000);
+  return `INV-${stamp}-${seq}`;
+}
+
 function dedupeRecipients(rows: Recipient[]): Recipient[] {
   const seen = new Set<string>();
   const unique: Recipient[] = [];
@@ -584,11 +621,12 @@ export async function sendAdminEmailCampaignAction(formData: FormData): Promise<
   const subject = (formData.get("subject") as string)?.trim();
   const previewText = (formData.get("preview_text") as string)?.trim() ?? "";
   const message = (formData.get("message") as string)?.trim();
-  const couponCode = (formData.get("coupon_code") as string)?.trim() || undefined;
+  const selectedCouponId = (formData.get("coupon_id") as string)?.trim() || "";
   const ctaLabel = (formData.get("cta_label") as string)?.trim() || undefined;
   const ctaUrl = (formData.get("cta_url") as string)?.trim() || undefined;
   const recipientEmail = (formData.get("recipient_email") as string)?.trim() || "";
   const orderId = (formData.get("order_id") as string)?.trim() || "";
+  const invoiceDueRaw = (formData.get("invoice_due_at") as string)?.trim();
 
   const kind = (kindRaw ?? "") as "promotion" | "coupon" | "invoice" | "announcement";
   const audience = (audienceRaw ?? "") as "all_users" | "single" | "order_user";
@@ -603,6 +641,7 @@ export async function sendAdminEmailCampaignAction(formData: FormData): Promise<
   if (audience === "single" && !recipientEmail) return { error: "Recipient email is required for single-send." };
   if (audience === "order_user" && !orderId) return { error: "Select an order for order user audience." };
   if (kind === "invoice" && !orderId) return { error: "Invoice email requires an order." };
+  if (kind === "coupon" && !selectedCouponId) return { error: "Please select a saved coupon." };
 
   const resendKey = process.env.RESEND_API_KEY;
   if (!resendKey) {
@@ -668,12 +707,63 @@ export async function sendAdminEmailCampaignAction(formData: FormData): Promise<
   const uniqueRecipients = dedupeRecipients(recipients);
   if (uniqueRecipients.length === 0) return { error: "No recipient emails found for this campaign." };
 
+  let effectiveCouponCode: string | undefined;
+  let couponId: string | null = null;
+  let couponDiscountLabel: string | undefined;
+  let couponExpiresLabel: string | undefined;
+  if (kind === "coupon") {
+    const { data: coupon, error: couponErr } = await db
+      .from("coupon_codes")
+      .select("id, code, discount_type, discount_value, expires_at, active")
+      .eq("id", selectedCouponId)
+      .maybeSingle();
+    if (couponErr || !coupon) return { error: "Selected coupon was not found." };
+    if (!coupon.active) return { error: "Selected coupon is inactive." };
+    couponId = coupon.id as string;
+    effectiveCouponCode = coupon.code as string;
+    couponDiscountLabel =
+      coupon.discount_type === "percent"
+        ? `${Number(coupon.discount_value).toFixed(0)}% OFF`
+        : `Save N$${Number(coupon.discount_value).toFixed(2)}`;
+    couponExpiresLabel = coupon.expires_at
+      ? new Date(coupon.expires_at as string).toLocaleDateString("en-GB")
+      : undefined;
+  }
+
+  let invoiceId: string | null = null;
+  let invoiceNumber: string | null = null;
+  if (kind === "invoice" && orderCtx) {
+    invoiceNumber = makeInvoiceNumber();
+    const dueAt = invoiceDueRaw ? new Date(invoiceDueRaw).toISOString() : null;
+    const { data: invoiceRow, error: invErr } = await db
+      .from("invoices")
+      .insert({
+        invoice_number: invoiceNumber,
+        order_id: orderCtx.id,
+        user_id: orderCtx.user_id,
+        subtotal_amount: orderCtx.total_amount,
+        total_amount: orderCtx.total_amount,
+        due_at: dueAt,
+        status: "issued",
+        metadata: { item_count: orderCtx.items.length },
+        created_by: check.userId,
+      })
+      .select("id")
+      .single();
+    if (invErr || !invoiceRow) {
+      return { error: invErr?.message ?? "Could not create invoice record." };
+    }
+    invoiceId = invoiceRow.id;
+  }
+
   const baseHtml = renderCampaignHtml({
     kind,
     subject,
     previewText,
     message,
-    couponCode,
+    couponCode: effectiveCouponCode,
+    couponDiscountLabel,
+    expiresLabel: couponExpiresLabel,
     ctaLabel,
     ctaUrl,
     orderId: orderCtx?.id,
@@ -686,6 +776,7 @@ export async function sendAdminEmailCampaignAction(formData: FormData): Promise<
         })
       : undefined,
     orderItems: orderCtx?.items,
+    invoiceNumber: invoiceNumber ?? undefined,
   });
 
   const { data: campaign, error: campErr } = await db
@@ -699,10 +790,13 @@ export async function sendAdminEmailCampaignAction(formData: FormData): Promise<
       from_email: fromEmail,
       status: "draft",
       metadata: {
-        coupon_code: couponCode ?? null,
+        coupon_code: effectiveCouponCode ?? null,
         cta_label: ctaLabel ?? null,
         cta_url: ctaUrl ?? null,
         order_id: orderCtx?.id ?? null,
+        coupon_id: couponId,
+        invoice_id: invoiceId,
+        invoice_number: invoiceNumber,
       },
       created_by: check.userId,
     })
@@ -713,6 +807,7 @@ export async function sendAdminEmailCampaignAction(formData: FormData): Promise<
   const resend = new Resend(resendKey);
   let sentCount = 0;
   let failedCount = 0;
+  let firstFailure: string | null = null;
   const recipientRows: Array<Record<string, unknown>> = [];
 
   for (const recipient of uniqueRecipients) {
@@ -721,7 +816,9 @@ export async function sendAdminEmailCampaignAction(formData: FormData): Promise<
       subject,
       previewText,
       message,
-      couponCode,
+      couponCode: effectiveCouponCode,
+      couponDiscountLabel,
+      expiresLabel: couponExpiresLabel,
       ctaLabel,
       ctaUrl,
       recipientName: recipient.fullName,
@@ -735,6 +832,7 @@ export async function sendAdminEmailCampaignAction(formData: FormData): Promise<
           })
         : undefined,
       orderItems: orderCtx?.items,
+      invoiceNumber: invoiceNumber ?? undefined,
     });
 
     const result = await resend.emails.send({
@@ -746,6 +844,7 @@ export async function sendAdminEmailCampaignAction(formData: FormData): Promise<
 
     if (result.error) {
       failedCount += 1;
+      if (!firstFailure) firstFailure = result.error.message;
       recipientRows.push({
         campaign_id: campaign.id,
         user_id: recipient.userId,
@@ -783,8 +882,160 @@ export async function sendAdminEmailCampaignAction(formData: FormData): Promise<
     })
     .eq("id", campaign.id);
 
+  if (couponId) await db.from("coupon_codes").update({ campaign_id: campaign.id }).eq("id", couponId);
+  if (invoiceId) {
+    await db.from("invoices").update({ campaign_id: campaign.id }).eq("id", invoiceId);
+  }
+
   revalidatePath("/admin/emails");
+  if (sentCount === 0 && failedCount > 0) {
+    return { error: firstFailure ?? "Email delivery failed. Check your sender domain and API key." };
+  }
   return {
-    success: `Campaign sent: ${sentCount} delivered, ${failedCount} failed.`,
+    success: `Campaign sent: ${sentCount} delivered, ${failedCount} failed.${effectiveCouponCode ? ` Coupon: ${effectiveCouponCode}.` : ""}${invoiceNumber ? ` Invoice: ${invoiceNumber}.` : ""}`,
   };
+}
+
+export async function deleteEmailCampaignAction(campaignId: string) {
+  await assertAdmin();
+  const db = createSupabaseAdminClient();
+  const { error } = await db.from("email_campaigns").delete().eq("id", campaignId);
+  if (error) return { error: error.message };
+  revalidatePath("/admin/emails");
+  return { success: true };
+}
+
+// ─── Coupon management ────────────────────────────────────────────────────────
+
+export async function saveCouponAction(formData: FormData) {
+  const check = await assertAdmin();
+  const db = createSupabaseAdminClient();
+
+  const id = (formData.get("id") as string | null)?.trim() || null;
+  const codeRaw = (formData.get("code") as string)?.trim() ?? "";
+  const description = (formData.get("description") as string)?.trim() ?? "";
+  const discountType = (formData.get("discount_type") as string)?.trim() as "percent" | "fixed_amount";
+  const discountValueRaw = (formData.get("discount_value") as string)?.trim();
+  const startsAtRaw = (formData.get("starts_at") as string)?.trim();
+  const expiresAtRaw = (formData.get("expires_at") as string)?.trim();
+  const usageLimitRaw = (formData.get("usage_limit") as string)?.trim();
+  const active = formData.get("active") === "true";
+  const scopeType = (formData.get("scope_type") as string)?.trim() as "all" | "collection" | "product";
+  const scopeCollection = (formData.get("scope_collection") as string)?.trim() || null;
+  const scopeProductId = (formData.get("scope_product_id") as string)?.trim() || null;
+
+  if (!codeRaw) return { error: "Coupon code is required." };
+  const code = codeRaw.toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+  if (!code) return { error: "Coupon code must contain letters/numbers only." };
+
+  if (!["percent", "fixed_amount"].includes(discountType)) {
+    return { error: "Invalid discount type." };
+  }
+  const discountValue = parseFloat(discountValueRaw ?? "");
+  if (Number.isNaN(discountValue) || discountValue <= 0) {
+    return { error: "Discount value must be a positive number." };
+  }
+  if (discountType === "percent" && discountValue > 100) {
+    return { error: "Percent discount cannot exceed 100." };
+  }
+
+  if (!["all", "collection", "product"].includes(scopeType)) {
+    return { error: "Invalid coupon scope." };
+  }
+  if (scopeType === "collection" && !scopeCollection) {
+    return { error: "Choose a collection for collection scope." };
+  }
+  if (scopeType === "product" && !scopeProductId) {
+    return { error: "Choose a product for product scope." };
+  }
+
+  const startsAt = startsAtRaw ? new Date(startsAtRaw).toISOString() : new Date().toISOString();
+  const expiresAt = expiresAtRaw ? new Date(expiresAtRaw).toISOString() : null;
+  if (expiresAt && new Date(expiresAt) <= new Date(startsAt)) {
+    return { error: "Expiry must be later than the start date." };
+  }
+  const usageLimit = usageLimitRaw ? parseInt(usageLimitRaw, 10) : null;
+  if (usageLimit !== null && (Number.isNaN(usageLimit) || usageLimit <= 0)) {
+    return { error: "Usage limit must be a positive whole number." };
+  }
+
+  if (id) {
+    const { data: dupe } = await db.from("coupon_codes").select("id").eq("code", code).neq("id", id).maybeSingle();
+    if (dupe) return { error: "Another coupon already uses this code." };
+
+    const { error } = await db
+      .from("coupon_codes")
+      .update({
+        code,
+        description,
+        discount_type: discountType,
+        discount_value: discountValue,
+        starts_at: startsAt,
+        expires_at: expiresAt,
+        usage_limit: usageLimit,
+        active,
+      })
+      .eq("id", id);
+    if (error) return { error: error.message };
+
+    await db.from("coupon_targets").delete().eq("coupon_id", id);
+    const { error: targetErr } = await db.from("coupon_targets").insert({
+      coupon_id: id,
+      target_type: scopeType,
+      collection: scopeType === "collection" ? scopeCollection : null,
+      product_id: scopeType === "product" ? scopeProductId : null,
+    });
+    if (targetErr) return { error: targetErr.message };
+  } else {
+    const { data: dupe } = await db.from("coupon_codes").select("id").eq("code", code).maybeSingle();
+    if (dupe) return { error: "That coupon code already exists." };
+
+    const { data: created, error } = await db
+      .from("coupon_codes")
+      .insert({
+        code,
+        description,
+        discount_type: discountType,
+        discount_value: discountValue,
+        starts_at: startsAt,
+        expires_at: expiresAt,
+        usage_limit: usageLimit,
+        active,
+        created_by: check.userId,
+      })
+      .select("id")
+      .single();
+    if (error || !created) return { error: error?.message ?? "Failed to create coupon." };
+
+    const { error: targetErr } = await db.from("coupon_targets").insert({
+      coupon_id: created.id,
+      target_type: scopeType,
+      collection: scopeType === "collection" ? scopeCollection : null,
+      product_id: scopeType === "product" ? scopeProductId : null,
+    });
+    if (targetErr) return { error: targetErr.message };
+  }
+
+  revalidatePath("/admin/coupons");
+  revalidatePath("/admin/emails");
+  return { success: true };
+}
+
+export async function toggleCouponActiveAction(couponId: string, active: boolean) {
+  await assertAdmin();
+  const db = createSupabaseAdminClient();
+  const { error } = await db.from("coupon_codes").update({ active }).eq("id", couponId);
+  if (error) return { error: error.message };
+  revalidatePath("/admin/coupons");
+  return { success: true };
+}
+
+export async function deleteCouponAction(couponId: string) {
+  await assertAdmin();
+  const db = createSupabaseAdminClient();
+  const { error } = await db.from("coupon_codes").delete().eq("id", couponId);
+  if (error) return { error: error.message };
+  revalidatePath("/admin/coupons");
+  revalidatePath("/admin/emails");
+  return { success: true };
 }

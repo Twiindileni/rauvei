@@ -17,7 +17,13 @@ export async function createSupabaseServerClient() {
         return cookieStore.getAll();
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+        // In Server Components, Next.js exposes a read-only cookie store.
+        // Supabase may still call setAll() during auth/session checks, so guard writes.
+        try {
+          cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+        } catch {
+          // No-op outside Server Actions/Route Handlers.
+        }
       },
     },
   });

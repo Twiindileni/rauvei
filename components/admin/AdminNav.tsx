@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Scissors,
   Mail,
+  TicketPercent,
 } from "lucide-react";
 import { logoutAction } from "@/lib/auth/actions";
 
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/admin/orders",   label: "Orders",       icon: ShoppingBag },
   { href: "/admin/services", label: "Services",     icon: Scissors },
   { href: "/admin/emails",   label: "Emails",       icon: Mail },
+  { href: "/admin/coupons",  label: "Coupons",      icon: TicketPercent },
   { href: "/admin/users",    label: "Users",        icon: Users },
   { href: "/admin/messages", label: "Messages",     icon: MessageSquare },
   { href: "/admin/posts",    label: "Blog Posts",   icon: FileText },

@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function getAdminStats() {
   const db = createSupabaseAdminClient();
-  const [usersRes, ordersRes, messagesRes, postsRes, serviceReqRes, pendingServiceReqRes, emailCampaignRes] =
+  const [usersRes, ordersRes, messagesRes, postsRes, serviceReqRes, pendingServiceReqRes, emailCampaignRes, couponRes] =
     await Promise.all([
       db.from("profiles").select("*", { count: "exact", head: true }),
       db.from("orders").select("*", { count: "exact", head: true }),
@@ -13,6 +13,7 @@ export async function getAdminStats() {
       db.from("service_requests").select("*", { count: "exact", head: true }),
       db.from("service_requests").select("*", { count: "exact", head: true }).eq("status", "pending"),
       db.from("email_campaigns").select("*", { count: "exact", head: true }),
+      db.from("coupon_codes").select("*", { count: "exact", head: true }),
     ]);
   const pendingOrders = await db
     .from("orders")
@@ -37,6 +38,7 @@ export async function getAdminStats() {
     serviceRequests: serviceReqRes.count ?? 0,
     pendingServiceRequests: pendingServiceReqRes.count ?? 0,
     emailCampaigns: emailCampaignRes.count ?? 0,
+    coupons: couponRes.count ?? 0,
   };
 }
 
@@ -261,14 +263,51 @@ export type AdminEmailCampaign = {
   created_by: string | null;
   created_at: string;
   sent_at: string | null;
+  metadata: {
+    coupon_code?: string | null;
+    invoice_number?: string | null;
+  } | null;
 };
 
 export async function getAdminEmailCampaigns(limit = 20): Promise<AdminEmailCampaign[]> {
   const db = createSupabaseAdminClient();
   const { data } = await db
     .from("email_campaigns")
-    .select("id, kind, audience, subject, preview_text, status, sent_count, failed_count, created_by, created_at, sent_at")
+    .select("id, kind, audience, subject, preview_text, status, sent_count, failed_count, created_by, created_at, sent_at, metadata")
     .order("created_at", { ascending: false })
     .limit(limit);
   return (data as AdminEmailCampaign[]) ?? [];
+}
+
+export type AdminCoupon = {
+  id: string;
+  code: string;
+  description: string;
+  discount_type: "percent" | "fixed_amount";
+  discount_value: number;
+  starts_at: string;
+  expires_at: string | null;
+  usage_limit: number | null;
+  used_count: number;
+  active: boolean;
+  created_at: string;
+  coupon_targets: {
+    id: string;
+    target_type: "all" | "collection" | "product";
+    collection: string | null;
+    product_id: string | null;
+  }[];
+};
+
+export async function getAdminCoupons(): Promise<AdminCoupon[]> {
+  const db = createSupabaseAdminClient();
+  const { data } = await db
+    .from("coupon_codes")
+    .select(`
+      id, code, description, discount_type, discount_value, starts_at, expires_at,
+      usage_limit, used_count, active, created_at,
+      coupon_targets(id, target_type, collection, product_id)
+    `)
+    .order("created_at", { ascending: false });
+  return (data as AdminCoupon[]) ?? [];
 }

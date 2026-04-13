@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAdminStats } from "@/lib/admin/data";
-import { Users, ShoppingBag, MessageSquare, FileText, Clock, Heart, Scissors, Mail } from "lucide-react";
+import { Users, ShoppingBag, MessageSquare, FileText, Clock, Heart, Scissors, Mail, TicketPercent } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +26,13 @@ export default async function AdminOverviewPage() {
       icon: Mail,
       href: "/admin/emails",
       color: "#d97706",
+    },
+    {
+      label: "Coupons",
+      value: stats.coupons,
+      icon: TicketPercent,
+      href: "/admin/coupons",
+      color: "#7c3aed",
     },
     { label: "Blog Posts",      value: stats.posts,         icon: FileText,     href: "/admin/posts",     color: "#4a90d9" },
   ];
@@ -77,6 +84,10 @@ export default async function AdminOverviewPage() {
           <Link href="/admin/emails" className="admin-quick-card">
             <Mail size={20} />
             <span>Send promo/invoice emails</span>
+          </Link>
+          <Link href="/admin/coupons" className="admin-quick-card">
+            <TicketPercent size={20} />
+            <span>Manage coupon rules</span>
           </Link>
         </div>
       </div>
